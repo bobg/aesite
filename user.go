@@ -99,6 +99,16 @@ func VerifyUser(ctx context.Context, client *datastore.Client, uw UserWrapper, t
 	return err
 }
 
+func LookupUser(ctx context.Context, client *datastore.Client, email string, uw UserWrapper) error {
+	var err error
+	email, err = CanonicalizeEmail(email)
+	if err != nil {
+		return errors.Wrapf(err, "canonicalizing e-mail address %s", email)
+	}
+	key := datastore.NameKey("User", email, nil)
+	return client.Get(ctx, key, uw)
+}
+
 func CanonicalizeEmail(inp string) (string, error) {
 	addr, err := mail.ParseAddress(inp)
 	if err != nil {
