@@ -17,12 +17,12 @@ import (
 
 // User is the type of a user identified by an e-mail address.
 type User struct {
-	Email            string
-	PWHash           []byte // scrypt
-	Salt             []byte
-	Verified, Active bool
-	VToken           string
-	VTokenExp        time.Time
+	Email     string
+	PWHash    []byte // scrypt
+	Salt      []byte
+	Verified  bool
+	VToken    string
+	VTokenExp time.Time
 }
 
 // UserWrapper is the type of an object with kind "User" that gets written to and read from the datastore.
@@ -58,7 +58,6 @@ func NewUser(ctx context.Context, client *datastore.Client, email, pw string, uw
 		Email:     email,
 		PWHash:    pwhash,
 		Salt:      salt[:],
-		Active:    true,
 		VToken:    vtoken,
 		VTokenExp: time.Now().Add(24 * time.Hour),
 	}
