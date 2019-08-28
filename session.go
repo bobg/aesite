@@ -2,7 +2,10 @@ package aesite
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"math"
 	"math/big"
 	"net/http"
@@ -102,4 +105,43 @@ func (s *Session) Cancel(ctx context.Context, client *datastore.Client) error {
 	s.Active = false
 	_, err := client.Put(ctx, s.Key(), s)
 	return err
+}
+
+const csrfNonceLen = 16
+
+func (s *Session) CSRFToken() (string, error) {
+	var buf [csrfNonceLen + sha256.Size]byte
+	_, err := rand.Read(buf[:csrfNonceLen])
+	if err != nil {
+		return "", errors.Wrap(err, "generating random nonce")
+	}
+	h := hmac.New(sha256.New, s.CSRFKey)
+	_, err = h.Write(buf[:csrfNonceLen])
+	if err != nil {
+		return "", errors.Wrap(err, "computing HMAC")
+	}
+	copy(buf[csrfNonceLen:], h.Sum(nil))
+	return base64.StdEncoding.EncodeToString(buf[:]), nil
+}
+
+var CSRFErr = errors.New("CSRF check failed")
+
+func (s *Session) CSRFCheck(inp string) error {
+	got, err := base64.StdEncoding.DecodeString(inp)
+	if err != nil {
+		return errors.Wrap(err, "decoding base64")
+	}
+	if len(got) != csrfNonceLen+sha256.Size {
+		return errors.Wrap(err, "CSRF token has wrong length")
+	}
+	h := hmac.New(sha256.New, s.CSRFKey)
+	_, err = h.Write(got[:csrfNonceLen])
+	if err != nil {
+		return errors.Wrap(err, "computing HMAC")
+	}
+	want := h.Sum(nil)
+	if !hmac.Equal(got[csrfNonceLen:], want) {
+		return CSRFErr
+	}
+	return nil
 }
