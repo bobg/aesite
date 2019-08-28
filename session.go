@@ -2,7 +2,9 @@ package aesite
 
 import (
 	"context"
-	"math/rand"
+	"crypto/rand"
+	"math"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -13,9 +15,12 @@ import (
 type Session struct {
 	ID      int64
 	UserKey *datastore.Key
+	CSRFKey []byte
 	Active  bool
 	Exp     time.Time
 }
+
+var maxint64 = big.NewInt(math.MaxInt64)
 
 func (s *Session) Key() *datastore.Key {
 	return datastore.IDKey("Session", s.ID, nil)
@@ -26,14 +31,24 @@ const sessionDur = 30 * 24 * time.Hour
 // NewSession creates a new session for the given user and stores it in the datastore.
 // The caller should seed the RNG (with rand.Seed) before calling this function.
 func NewSession(ctx context.Context, client *datastore.Client, userKey *datastore.Key) (*Session, error) {
-	id := rand.Int63()
+	id, err := rand.Int(rand.Reader, maxint64)
+	if err != nil {
+		return nil, errors.Wrap(err, "choosing random session ID")
+	}
 	s := &Session{
-		ID:      id,
+		ID:      id.Int64(),
 		UserKey: userKey,
+		CSRFKey: make([]byte, 32),
 		Active:  true,
 		Exp:     time.Now().Add(sessionDur),
 	}
-	_, err := client.Put(ctx, s.Key(), s)
+
+	_, err = rand.Read(s.CSRFKey[:])
+	if err != nil {
+		return nil, errors.Wrap(err, "choosing random CSRF key")
+	}
+
+	_, err = client.Put(ctx, s.Key(), s)
 	return s, err
 }
 
