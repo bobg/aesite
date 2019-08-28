@@ -21,6 +21,15 @@ func SetSetting(ctx context.Context, client *datastore.Client, name string, valu
 	return err
 }
 
+// NewSetting sets the value for a setting key only if it doesn't already exist.
+func NewSetting(ctx context.Context, client *datastore.Client, name string, value []byte) error {
+	s := &Setting{Name: name, Value: value}
+	k := settingKey(name)
+	m := datastore.NewInsert(k, s)
+	_, err := client.Mutate(ctx, m)
+	return err
+}
+
 func GetSetting(ctx context.Context, client *datastore.Client, name string) ([]byte, error) {
 	var s Setting
 	err := client.Get(ctx, settingKey(name), &s)
