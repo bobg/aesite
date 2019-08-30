@@ -31,17 +31,18 @@ func DSTest(ctx context.Context, projectID string) error {
 		return errors.Wrap(err, "starting datastore emulator")
 	}
 
-	go func() {
-		ch := make(chan struct{})
-		go func() {
-			defer log.Print("datastore emulator exited")
-			defer close(ch)
-			err := cmd.Wait()
-			if err != nil {
-				log.Printf("datastore emulator: %s", err)
-			}
-		}()
+	ch := make(chan struct{})
 
+	go func() {
+		defer close(ch)
+		err := cmd.Wait()
+		if err != nil {
+			log.Printf("datastore emulator: %s", err)
+		}
+		log.Print("datastore emulator exited")
+	}()
+
+	go func() {
 		select {
 		case <-ctx.Done():
 			log.Print("sending interrupt to datastore emulator")
