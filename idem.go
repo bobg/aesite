@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/datastore"
 	"github.com/pkg/errors"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -18,9 +19,9 @@ type IdemKey struct {
 // An idempotency key lasts at least this long.
 var idemDur = time.Hour
 
-// ErrIdempotent is the error returned by Idempotent
+// ErrIdempotency is the error returned by Idempotent
 // when the given key has been seen recently.
-var ErrIdempotent = errors.New("idempotency check failed")
+var ErrIdempotency = errors.New("idempotency check failed")
 
 // Idempotent stores a key (a string) in the datastore.
 // A second attempt to store the same key will fail (with ErrIdempotent) for about an hour.
@@ -30,17 +31,9 @@ var ErrIdempotent = errors.New("idempotency check failed")
 //
 // Calling Idempotent opportunistically deletes expired IdemKey records.
 func Idempotent(ctx context.Context, client *datastore.Client, key string) error {
-	// Opportunistically delete expired idempotency keys.
-	q := datastore.NewQuery("IdemKey").Filter("Exp <", time.Now()).KeysOnly()
-	keys, err := client.GetAll(ctx, q, nil)
+	err := idemExpire(ctx, client)
 	if err != nil {
-		return errors.Wrap(err, "getting expired idempotency keys")
-	}
-	if len(keys) > 0 {
-		err = client.DeleteMulti(ctx, keys)
-		if err != nil {
-			return errors.Wrap(err, "deleting expired idempotency keys")
-		}
+		return errors.Wrap(err, "expiring idempotency keys")
 	}
 
 	k := &IdemKey{
@@ -49,8 +42,40 @@ func Idempotent(ctx context.Context, client *datastore.Client, key string) error
 	}
 	ins := datastore.NewInsert(datastore.NameKey("IdemKey", key, nil), k)
 	_, err = client.Mutate(ctx, ins)
-	if status.Code(err) == codes.AlreadyExists {
-		return ErrIdempotent
+	if merr, ok := err.(datastore.MultiError); ok && status.Code(merr[0]) == codes.AlreadyExists {
+		return ErrIdempotency
 	}
 	return errors.Wrapf(err, "storing idempotency key %s", key)
+}
+
+const multiLimit = 500
+
+func idemExpire(ctx context.Context, client *datastore.Client) error {
+	q := datastore.NewQuery("IdemKey").Filter("Exp <", time.Now()).KeysOnly()
+	it := client.Run(ctx, q)
+	var keys []*datastore.Key
+	del := func() error {
+		if len(keys) == 0 {
+			return nil
+		}
+		defer func() { keys = nil }()
+		return client.DeleteMulti(ctx, keys)
+	}
+	for {
+		k, err := it.Next(nil)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		keys = append(keys, k)
+		if len(keys) == multiLimit {
+			err = del()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return del()
 }
