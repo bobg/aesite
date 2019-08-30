@@ -42,6 +42,9 @@ func Idempotent(ctx context.Context, client *datastore.Client, key string) error
 	}
 	ins := datastore.NewInsert(datastore.NameKey("IdemKey", key, nil), k)
 	_, err = client.Mutate(ctx, ins)
+	if status.Code(err) == codes.AlreadyExists {
+		return ErrIdempotency
+	}
 	if merr, ok := err.(datastore.MultiError); ok && status.Code(merr[0]) == codes.AlreadyExists {
 		return ErrIdempotency
 	}
