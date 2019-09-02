@@ -3,9 +3,11 @@ package aesite
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
-	"encoding/hex"
-	"fmt"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"net/mail"
 	"strings"
 	"time"
@@ -31,18 +33,9 @@ type User struct {
 	// Verify should be the result of navigating to an e-mail-confirmation link.
 	Verified bool
 
-	// VToken is a random URL-safe string.
-	// The caller of VerifyUser passes in a string that is compared to VToken; they must match.
-	// When a new user signs up and is not yet verified,
-	// the application should send a URL to the user's e-mail address,
-	// containing this token as a parameter.
-	// Visiting the URL should result in a VerifyUser call that passes in the URL parameter.
-	VToken string
-
-	// The time at which VToken expires
-	// (i.e., when VerifyUser will produce an error rather than set Verified to true).
-	// By default this is 1 day after the new User record is created.
-	VTokenExp time.Time
+	// Secret is a random bytestring used for calculating verification tokens.
+	// Applications must take care not to let this value leak.
+	Secret []byte
 }
 
 // UserWrapper is the type of an object with kind "User" that gets written to and read from the datastore.
@@ -73,18 +66,16 @@ func NewUser(ctx context.Context, client *datastore.Client, email, pw string, uw
 	if err != nil {
 		return errors.Wrap(err, "hashing password")
 	}
-	var vbytes [16]byte
-	_, err = rand.Read(vbytes[:])
+	var secret [32]byte
+	_, err = rand.Read(secret[:])
 	if err != nil {
-		return errors.Wrap(err, "getting random verification token")
+		return errors.Wrap(err, "generating random user secret")
 	}
-	vtoken := hex.EncodeToString(vbytes[:])
 	u := &User{
-		Email:     email,
-		PWHash:    pwhash,
-		Salt:      salt[:],
-		VToken:    vtoken,
-		VTokenExp: time.Now().Add(24 * time.Hour),
+		Email:  email,
+		PWHash: pwhash,
+		Salt:   salt[:],
+		Secret: secret[:],
 	}
 	uw.SetUser(u)
 
@@ -109,24 +100,110 @@ func (u *User) CheckPW(pw string) (bool, error) {
 	return bytes.Equal(pwhash, u.PWHash), err
 }
 
-// VerifyUser sets Verified to true for the User in uw.
-// The supplied token presumably comes from a URL parameter and must match the user's VToken string,
-// which must also be unexpired. (See User.VToken for more.)
+const (
+	verifyTokenDur = time.Hour
+	verifyNonceLen = 15 // to make base64 encoding come out nicely
+)
+
+// VerificationToken generates a new verification token
+// from a random nonce and an expiration time
+// hashed with the user secret in uw.
+// It returns the expTime, the nonce, and the token
+// (all of which are needed by CheckVerificationToken).
+func VerificationToken(uw UserWrapper) (expSecs int64, nonce, token string, err error) {
+	expSecs = time.Now().Add(verifyTokenDur).Unix()
+
+	var nonceBuf [verifyNonceLen]byte
+	_, err = rand.Read(nonceBuf[:])
+	if err != nil {
+		err = errors.Wrap(err, "generating random nonce")
+		return
+	}
+	nonce = base64.StdEncoding.EncodeToString(nonceBuf[:])
+
+	u := uw.GetUser()
+	h := hmac.New(sha256.New, u.Secret)
+
+	err = binary.Write(h, binary.LittleEndian, expSecs)
+	if err != nil {
+		err = errors.Wrap(err, "hashing exp time")
+		return
+	}
+
+	_, err = h.Write(nonceBuf[:])
+	if err != nil {
+		err = errors.Wrap(err, "hashing nonce")
+		return
+	}
+
+	token = base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	return expSecs, nonce, token, nil
+}
+
+var (
+	// ErrExpired is the result of checking an expired token.
+	ErrExpired = errors.New("token expired")
+
+	// ErrVerification is the result of checking an invalid token.
+	ErrVerification = errors.New("token check failed")
+)
+
+// CheckVerificationToken checks a verification token for validity
+// (including whether it has expired).
+func CheckVerificationToken(uw UserWrapper, expSecs int64, nonce, token string) error {
+	nowSecs := time.Now().Unix()
+	if nowSecs > expSecs {
+		return ErrExpired
+	}
+
+	u := uw.GetUser()
+	h := hmac.New(sha256.New, u.Secret)
+
+	err := binary.Write(h, binary.LittleEndian, expSecs)
+	if err != nil {
+		return errors.Wrap(err, "hashing exp time")
+	}
+
+	nonceBytes, err := base64.StdEncoding.DecodeString(nonce)
+	if err != nil {
+		return errors.Wrap(err, "decoding nonce")
+	}
+
+	_, err = h.Write(nonceBytes)
+	if err != nil {
+		return errors.Wrap(err, "hashing nonce")
+	}
+
+	got := h.Sum(nil)
+
+	want, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return errors.Wrap(err, "decoding token")
+	}
+
+	if !hmac.Equal(got, want) {
+		return ErrVerification
+	}
+	return nil
+}
+
+// VerifyUser checks a verification token for validity and sets the user's Verified flag to true.
 // If the user is already verified, this is a no-op.
-func VerifyUser(ctx context.Context, client *datastore.Client, uw UserWrapper, token string) error {
+func VerifyUser(ctx context.Context, client *datastore.Client, uw UserWrapper, expSecs int64, nonce, token string) error {
 	u := uw.GetUser()
 	if u.Verified {
 		return nil
 	}
-	if u.VTokenExp.Before(time.Now()) {
-		return fmt.Errorf("verification token expired")
+
+	err := CheckVerificationToken(uw, expSecs, nonce, token)
+	if err != nil {
+		return errors.Wrap(err, "checking verification token")
 	}
-	if token != u.VToken {
-		return fmt.Errorf("token mismatch")
-	}
+
 	u.Verified = true
-	_, err := client.Put(ctx, u.Key(), uw)
-	return err
+	_, err = client.Put(ctx, u.Key(), uw)
+	return errors.Wrap(err, "storing updated user record")
 }
 
 // LookupUser looks up a user by e-mail address and places the result in uw.

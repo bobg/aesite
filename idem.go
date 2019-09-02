@@ -11,8 +11,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// IdemKey is the type of an idempotency key in the datastore.
 type IdemKey struct {
+	// Key is a caller-supplied string.
 	Key string
+
+	// Exp is the expiration time of this key.
 	Exp time.Time
 }
 
