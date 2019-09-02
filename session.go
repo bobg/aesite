@@ -148,7 +148,7 @@ func (s *Session) CSRFToken() (string, error) {
 		return "", errors.Wrap(err, "computing HMAC")
 	}
 	copy(buf[csrfNonceLen:], h.Sum(nil))
-	return base64.StdEncoding.EncodeToString(buf[:]), nil
+	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
 }
 
 // ErrCSRF is the error produced when an invalid CSRF token is presented to CSRFCheck.
@@ -160,7 +160,7 @@ var ErrCSRF = errors.New("CSRF check failed")
 // Other errors are possible too.
 // A return value of nil means the token is valid.
 func (s *Session) CSRFCheck(inp string) error {
-	got, err := base64.StdEncoding.DecodeString(inp)
+	got, err := base64.RawURLEncoding.DecodeString(inp)
 	if err != nil {
 		return errors.Wrap(err, "decoding base64")
 	}

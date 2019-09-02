@@ -119,7 +119,7 @@ func VerificationToken(uw UserWrapper) (expSecs int64, nonce, token string, err 
 		err = errors.Wrap(err, "generating random nonce")
 		return
 	}
-	nonce = base64.StdEncoding.EncodeToString(nonceBuf[:])
+	nonce = base64.RawURLEncoding.EncodeToString(nonceBuf[:])
 
 	u := uw.GetUser()
 	h := hmac.New(sha256.New, u.Secret)
@@ -136,7 +136,7 @@ func VerificationToken(uw UserWrapper) (expSecs int64, nonce, token string, err 
 		return
 	}
 
-	token = base64.StdEncoding.EncodeToString(h.Sum(nil))
+	token = base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 
 	return expSecs, nonce, token, nil
 }
@@ -165,7 +165,7 @@ func CheckVerificationToken(uw UserWrapper, expSecs int64, nonce, token string) 
 		return errors.Wrap(err, "hashing exp time")
 	}
 
-	nonceBytes, err := base64.StdEncoding.DecodeString(nonce)
+	nonceBytes, err := base64.RawURLEncoding.DecodeString(nonce)
 	if err != nil {
 		return errors.Wrap(err, "decoding nonce")
 	}
@@ -177,7 +177,7 @@ func CheckVerificationToken(uw UserWrapper, expSecs int64, nonce, token string) 
 
 	got := h.Sum(nil)
 
-	want, err := base64.StdEncoding.DecodeString(token)
+	want, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return errors.Wrap(err, "decoding token")
 	}
