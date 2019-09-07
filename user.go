@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"io"
 	"net/mail"
 	"strings"
 	"time"
@@ -57,24 +58,22 @@ func NewUser(ctx context.Context, client *datastore.Client, email, pw string, uw
 	if err != nil {
 		return errors.Wrap(err, "canonicalizing e-mail address")
 	}
-	var salt [16]byte
-	_, err = rand.Read(salt[:])
+
+	salt, pwhash, err := saltedPWHash(pw)
 	if err != nil {
-		return errors.Wrap(err, "getting random salt")
+		return errors.Wrap(err, "generating salted pwhash")
 	}
-	pwhash, err := scrypt.Key([]byte(pw), salt[:], 32768, 8, 1, 32)
-	if err != nil {
-		return errors.Wrap(err, "hashing password")
-	}
+
 	var secret [32]byte
 	_, err = rand.Read(secret[:])
 	if err != nil {
 		return errors.Wrap(err, "generating random user secret")
 	}
+
 	u := &User{
 		Email:  email,
 		PWHash: pwhash,
-		Salt:   salt[:],
+		Salt:   salt,
 		Secret: secret[:],
 	}
 	uw.SetUser(u)
@@ -98,6 +97,38 @@ func (u *User) Key() *datastore.Key {
 func (u *User) CheckPW(pw string) (bool, error) {
 	pwhash, err := scrypt.Key([]byte(pw), u.Salt, 32768, 8, 1, 32)
 	return bytes.Equal(pwhash, u.PWHash), err
+}
+
+func (u *User) SecureToken(wt io.WriterTo) (string, error) {
+	t, err := u.secureToken(wt)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(t), nil
+}
+
+func (u *User) CheckToken(wt io.WriterTo, token string) error {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return errors.Wrap(err, "decoding token")
+	}
+
+	computed, err := u.secureToken(wt)
+	if err != nil {
+		return errors.Wrap(err, "computing token")
+	}
+
+	if !hmac.Equal(computed, decoded) {
+		return ErrVerification
+	}
+
+	return nil
+}
+
+func (u *User) secureToken(wt io.WriterTo) ([]byte, error) {
+	h := hmac.New(sha256.New, u.Secret)
+	_, err := wt.WriteTo(h)
+	return h.Sum(nil), err
 }
 
 const (
@@ -202,6 +233,7 @@ func VerifyUser(ctx context.Context, client *datastore.Client, uw UserWrapper, e
 	}
 
 	u.Verified = true
+	uw.SetUser(u)
 	_, err = client.Put(ctx, u.Key(), uw)
 	return errors.Wrap(err, "storing updated user record")
 }
@@ -218,6 +250,21 @@ func LookupUser(ctx context.Context, client *datastore.Client, email string, uw 
 	return client.Get(ctx, key, uw)
 }
 
+// UpdatePW sets a new password for the given user.
+func UpdatePW(ctx context.Context, client *datastore.Client, uw UserWrapper, pw string) error {
+	salt, pwhash, err := saltedPWHash(pw)
+	if err != nil {
+		return errors.Wrap(err, "generating salted pwhash")
+	}
+
+	u := uw.GetUser()
+	u.Salt = salt[:]
+	u.PWHash = pwhash
+	uw.SetUser(u)
+	_, err = client.Put(ctx, u.Key(), uw)
+	return errors.Wrap(err, "storing updated user record")
+}
+
 // CanonicalizeEmail parses an e-mail address and returns it in a canonical form
 // suitable for use as a lookup key.
 func CanonicalizeEmail(inp string) (string, error) {
@@ -226,4 +273,14 @@ func CanonicalizeEmail(inp string) (string, error) {
 		return "", err
 	}
 	return strings.ToLower(addr.Address), nil
+}
+
+func saltedPWHash(pw string) (salt, pwhash []byte, err error) {
+	salt = make([]byte, 16)
+	_, err = rand.Read(salt)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "getting random salt")
+	}
+	pwhash, err = scrypt.Key([]byte(pw), salt, 32768, 8, 1, 32)
+	return salt, pwhash, errors.Wrap(err, "hashing password")
 }
