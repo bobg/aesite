@@ -26,7 +26,7 @@ type Session struct {
 
 	// CSRFKey is a unique random bytestring that can be used for CSRF protection.
 	// See Session.CSRFToken and Session.CSRFCheck.
-	CSRFKey []byte
+	CSRFKey []byte `json:"-"`
 
 	// Active is true until Session.Cancel is called.
 	Active bool

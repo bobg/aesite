@@ -24,10 +24,10 @@ type User struct {
 	Email string
 
 	// PWHash is the scrypt hash (salted with Salt) of the user's password.
-	PWHash []byte // scrypt
+	PWHash []byte `json:"-"` // scrypt
 
 	// Salt is a random byte string used as scrypt salt for PWHash.
-	Salt []byte
+	Salt []byte `json:"-"`
 
 	// Verified is false until User.Verify is called, setting it to true.
 	// When signing up new users,
@@ -36,7 +36,7 @@ type User struct {
 
 	// Secret is a random bytestring used for calculating verification tokens.
 	// Applications must take care not to let this value leak.
-	Secret []byte
+	Secret []byte `json:"-"`
 }
 
 // UserWrapper is the type of an object with kind "User" that gets written to and read from the datastore.
