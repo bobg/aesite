@@ -17,6 +17,8 @@ var envInitRegex = regexp.MustCompile(`export\s+([^=]+)=(.*)`)
 
 // DSTest starts the datastore emulator in a subprocess.
 // It uses the gcloud binary, which must be found in PATH.
+// (Further, the proper gcloud components must be installed;
+// see https://cloud.google.com/datastore/docs/tools/datastore-emulator.)
 // It gives the program two seconds to start,
 // then sets this process's environment variables
 // (again with gcloud)
