@@ -42,6 +42,7 @@ type User struct {
 // UserWrapper is the type of an object with kind "User" that gets written to and read from the datastore.
 // It can be used by callers to wrap application-specific user data around the User type defined here.
 // The caller's implementation of UserWrapper must be able to convert to and from aesite.User.
+// Note: aesite.User can act as its own (trivial) UserWrapper.
 type UserWrapper interface {
 	// GetUser unwraps the UserWrapper object to produce a *User.
 	GetUser() *User
@@ -88,15 +89,21 @@ func NewUser(ctx context.Context, client *datastore.Client, email, pw string, uw
 	return errors.Wrap(err, "storing user")
 }
 
+// GetUser implements UserWrapper.GetUser.
+func (u *User) GetUser() *User { return u }
+
+// SetUser implements UserWrapper.SetUser.
+func (u *User) SetUser(u2 *User) { *u = *u2 }
+
 // Key returns the datastore key for this user.
 func (u *User) Key() *datastore.Key {
 	return datastore.NameKey("User", u.Email, nil)
 }
 
 // CheckPW tests a password input for validity against this user's Salt and PWHash.
-func (u *User) CheckPW(pw string) (bool, error) {
-	pwhash, err := scrypt.Key([]byte(pw), u.Salt, 32768, 8, 1, 32)
-	return bytes.Equal(pwhash, u.PWHash), err
+func (u *User) CheckPW(pw string) bool {
+	pwhash, _ := scrypt.Key([]byte(pw), u.Salt, 32768, 8, 1, 32)
+	return bytes.Equal(pwhash, u.PWHash)
 }
 
 func (u *User) SecureToken(wt io.WriterTo) (string, error) {
