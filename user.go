@@ -21,7 +21,7 @@ import (
 // User is the type of a user identified by an e-mail address.
 type User struct {
 	// Email is the user's e-mail address. It is used as a unique key for the User record.
-	Email string
+	Email string `json:"email"`
 
 	// PWHash is the scrypt hash (salted with Salt) of the user's password.
 	PWHash []byte `json:"-"` // scrypt
@@ -32,7 +32,7 @@ type User struct {
 	// Verified is false until User.Verify is called, setting it to true.
 	// When signing up new users,
 	// Verify should be the result of navigating to an e-mail-confirmation link.
-	Verified bool
+	Verified bool `json:"verified"`
 
 	// Secret is a random bytestring used for calculating verification tokens.
 	// Applications must take care not to let this value leak.

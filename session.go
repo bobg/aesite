@@ -19,21 +19,21 @@ import (
 // It is stored as an entity of kind "Session" in Google Cloud Datastore.
 type Session struct {
 	// ID is a unique random identifier for the session.
-	ID int64
+	ID int64 `json:"id"`
 
 	// UserKey is the Google Cloud Datastore key for the User entity associated with this session.
-	UserKey *datastore.Key
+	UserKey *datastore.Key `json:"user_key"`
 
 	// CSRFKey is a unique random bytestring that can be used for CSRF protection.
 	// See Session.CSRFToken and Session.CSRFCheck.
 	CSRFKey []byte `json:"-"`
 
 	// Active is true until Session.Cancel is called.
-	Active bool
+	Active bool `json:"active"`
 
 	// Exp is the expiration time for this session.
 	// This defaults to 30 days after the session was created.
-	Exp time.Time
+	Exp time.Time `json:"exp"`
 }
 
 var maxint64 = big.NewInt(math.MaxInt64)
