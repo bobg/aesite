@@ -70,15 +70,22 @@ func NewSession(ctx context.Context, client *datastore.Client, userKey *datastor
 
 const cookieName = "s"
 
+// ErrInactive means a session is inactive or expired.
+var ErrInactive = errors.New("inactive session")
+
 // GetSession checks for a session cookie in a given HTTP request
 // and gets the session from the datastore.
 // The cookie must have been handed out in an earlier HTTP response via Session.SetCookie.
-// If the cookie is not present,
-// or if the session does not exist, is inactive, or is expired, this returns nil, nil.
+// If there is no cookie in the HTTP request,
+// the resulting error is http.ErrNoCookie.
+// If the cookie is not present in the datastore,
+// the resulting error is datastore.ErrNoSuchEntity.
+// If the cookie is present but expired or inactive,
+// the resulting error is ErrInactive.
 func GetSession(ctx context.Context, client *datastore.Client, req *http.Request) (*Session, error) {
 	cookie, err := req.Cookie(cookieName)
 	if err == http.ErrNoCookie {
-		return nil, nil
+		return nil, err
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "getting session cookie from HTTP request")
@@ -90,13 +97,13 @@ func GetSession(ctx context.Context, client *datastore.Client, req *http.Request
 	var s Session
 	err = client.Get(ctx, key, &s)
 	if err == datastore.ErrNoSuchEntity {
-		return nil, nil
+		return nil, err
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "reading session from datastore")
 	}
 	if !s.Active || s.Exp.Before(time.Now()) {
-		return nil, nil
+		return nil, ErrInactive
 	}
 	return &s, nil
 }
