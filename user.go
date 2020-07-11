@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net/mail"
+	"reflect"
 	"strings"
 	"time"
 
@@ -37,6 +38,10 @@ type User struct {
 	// Secret is a random bytestring used for calculating verification tokens.
 	// Applications must take care not to let this value leak.
 	Secret []byte `json:"-"`
+
+	// UpdateCounter is incremented at the end of a successful call to UpdateUser.
+	// It should not be used for any other purpose.
+	UpdateCounter int64 `json:"-"`
 }
 
 // UserWrapper is the type of an object with kind "User" that gets written to and read from the datastore.
@@ -255,6 +260,67 @@ func LookupUser(ctx context.Context, client *datastore.Client, email string, uw 
 	}
 	key := datastore.NameKey("User", email, nil)
 	return client.Get(ctx, key, uw)
+}
+
+// UpdateUser atomically updates a user.
+//
+// To achieve this, UpdateUser uses optimistic locking.
+// It starts a datastore transaction, then looks up the user and places it in uw.
+// It next calls f to update the value in uw.
+// After f runs (without error),
+// UpdateUser fetches a new copy of the same user record
+// to ensure that its UpdateCounter field hasn't changed.
+// If it has, the transaction is rolled back.
+// Otherwise, UpdateCounter is incremented and the transaction committed.
+//
+// Note that this means f runs even if the user cannot ultimately be atomically updated.
+// So f should not have side effects beyond what can be rolled back with tx.
+func UpdateUser(ctx context.Context, client *datastore.Client, email string, uw UserWrapper, f func(tx *datastore.Transaction) error) error {
+	t := reflect.TypeOf(uw)
+	if t.Kind() != reflect.Ptr {
+		return errors.New("user argument is not a pointer")
+	}
+
+	err := LookupUser(ctx, client, email, uw)
+	if err != nil {
+		return errors.Wrapf(err, "looking up user %s", email)
+	}
+
+	tx, err := client.NewTransaction(ctx)
+	if err != nil {
+		return errors.Wrap(err, "beginning datastore transaction")
+	}
+	defer tx.Rollback()
+
+	err = f(tx)
+	if err != nil {
+		return err
+	}
+
+	uw2 := reflect.New(t.Elem()).Interface().(UserWrapper)
+	err = LookupUser(ctx, client, email, uw2)
+	if err != nil {
+		return errors.Wrapf(err, "re-looking up user %s", email)
+	}
+
+	var (
+		u  = uw.GetUser()
+		u2 = uw2.GetUser()
+	)
+	if u.UpdateCounter != u2.UpdateCounter {
+		return errors.New("user was updated")
+	}
+
+	u.UpdateCounter++
+	uw.SetUser(u)
+
+	_, err = client.Put(ctx, u.Key(), uw)
+	if err != nil {
+		return errors.Wrap(err, "storing user")
+	}
+
+	_, err = tx.Commit()
+	return errors.Wrapf(err, "committing transaction")
 }
 
 // UpdatePW sets a new password for the given user.
