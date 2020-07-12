@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	stderrs "errors"
 	"math"
 	"math/big"
 	"net/http"
@@ -82,6 +83,7 @@ var ErrInactive = errors.New("inactive session")
 // the resulting error is datastore.ErrNoSuchEntity.
 // If the session is present but expired or inactive,
 // the resulting error is ErrInactive.
+// You can use IsNoSession to test whether the error is any one of those.
 func GetSession(ctx context.Context, client *datastore.Client, req *http.Request) (*Session, error) {
 	cookie, err := req.Cookie(cookieName)
 	if err == http.ErrNoCookie {
@@ -95,6 +97,12 @@ func GetSession(ctx context.Context, client *datastore.Client, req *http.Request
 		return nil, errors.Wrap(err, "decoding session cookie")
 	}
 	return GetSessionByKey(ctx, client, key)
+}
+
+// IsNoSession tells whether err is one of the unexceptional no-session errors
+// (http.ErrNoCookie, datastore.ErrNoSuchEntity, and ErrInactive).
+func IsNoSession(err error) bool {
+	return stderrs.Is(err, http.ErrNoCookie) || stderrs.Is(err, datastore.ErrNoSuchEntity) || stderrs.Is(err, ErrInactive)
 }
 
 // GetSessionByKey gets the session with the given key.
@@ -117,8 +125,15 @@ func GetSessionByKey(ctx context.Context, client *datastore.Client, key *datasto
 	return &s, nil
 }
 
+// ErrAnonymous is the result of calling Session.GetUser on an anonymous session
+// (i.e., one with no UserKey set).
+var ErrAnonymous = errors.New("anonymous session")
+
 // GetUser looks up the user associated with this session and places it in uw.
 func (s *Session) GetUser(ctx context.Context, client *datastore.Client, uw UserWrapper) error {
+	if s.UserKey == nil {
+		return ErrAnonymous
+	}
 	return client.Get(ctx, s.UserKey, uw)
 }
 
