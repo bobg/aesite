@@ -262,6 +262,9 @@ func LookupUser(ctx context.Context, client *datastore.Client, email string, uw 
 	return client.Get(ctx, key, uw)
 }
 
+// ErrUpdateConflict is the result of calling UpdateUser and losing a race with another concurrent caller.
+var ErrUpdateConflict = errors.New("update conflict")
+
 // UpdateUser atomically updates a user.
 //
 // To achieve this, UpdateUser uses optimistic locking.
@@ -308,7 +311,7 @@ func UpdateUser(ctx context.Context, client *datastore.Client, email string, uw 
 		u2 = uw2.GetUser()
 	)
 	if u.UpdateCounter != u2.UpdateCounter {
-		return errors.New("user was updated")
+		return ErrUpdateConflict
 	}
 
 	u.UpdateCounter++
