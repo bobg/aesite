@@ -27,34 +27,18 @@ var envInitRegex = regexp.MustCompile(`export\s+([^=]+)=(.*)`)
 // the emulator subprocess gets an interrupt signal.
 func DSTest(ctx context.Context, projectID string) error {
 	log.Print("starting datastore emulator")
-	cmd := exec.Command("gcloud", "--project", projectID, "beta", "emulators", "datastore", "start")
+	cmd := exec.CommandContext(ctx, "gcloud", "--project", projectID, "beta", "emulators", "datastore", "start")
 	err := cmd.Start()
 	if err != nil {
 		return errors.Wrap(err, "starting datastore emulator")
 	}
 
-	ch := make(chan struct{})
-
 	go func() {
-		defer close(ch)
 		err := cmd.Wait()
 		if err != nil {
 			log.Printf("datastore emulator: %s", err)
 		}
 		log.Print("datastore emulator exited")
-	}()
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			log.Print("sending interrupt to datastore emulator")
-			err := cmd.Process.Signal(os.Interrupt)
-			if err != nil {
-				log.Printf("sending interrupt to datastore emulator: %s", err)
-			}
-
-		case <-ch:
-		}
 	}()
 
 	time.Sleep(2 * time.Second)

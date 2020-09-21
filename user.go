@@ -57,7 +57,7 @@ type UserWrapper interface {
 }
 
 // NewUser creates a new User object,
-// places it in the given UserWrapper,
+// places it in the given UserWrapper (which must be a pointer),
 // and writes the whole thing to the datastore.
 func NewUser(ctx context.Context, client *datastore.Client, email, pw string, uw UserWrapper) error {
 	email, err := CanonicalizeEmail(email)
@@ -233,6 +233,7 @@ func CheckVerificationToken(uw UserWrapper, expSecs int64, nonce, token string) 
 
 // VerifyUser checks a verification token for validity and sets the user's Verified flag to true.
 // If the user is already verified, this is a no-op.
+// The UserWrapper argument must be a pointer.
 func VerifyUser(ctx context.Context, client *datastore.Client, uw UserWrapper, expSecs int64, nonce, token string) error {
 	u := uw.GetUser()
 	if u.Verified {
@@ -250,7 +251,8 @@ func VerifyUser(ctx context.Context, client *datastore.Client, uw UserWrapper, e
 	return errors.Wrap(err, "storing updated user record")
 }
 
-// LookupUser looks up a user by e-mail address and places the result in uw.
+// LookupUser looks up a user by e-mail address and places the result in uw
+// (which must be a pointer).
 // The email argument is canonicalized with CanonicalizeEmail before the lookup.
 func LookupUser(ctx context.Context, client *datastore.Client, email string, uw UserWrapper) error {
 	var err error
@@ -268,7 +270,8 @@ var ErrUpdateConflict = errors.New("update conflict")
 // UpdateUser atomically updates a user.
 //
 // To achieve this, UpdateUser uses optimistic locking.
-// It starts a datastore transaction, then looks up the user and places it in uw.
+// It starts a datastore transaction, then looks up the user and places it in uw
+// (which must be a pointer).
 // It next calls f to update the value in uw.
 // After f runs (without error),
 // UpdateUser fetches a new copy of the same user record
