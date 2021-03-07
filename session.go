@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	stderrs "errors"
 	"math"
 	"math/big"
 	"net/http"
@@ -44,10 +43,14 @@ func (s *Session) Key() *datastore.Key {
 	return datastore.IDKey("Session", s.ID, nil)
 }
 
-const sessionDur = 30 * 24 * time.Hour
+const defaultSessionDur = 30 * 24 * time.Hour
 
 // NewSession creates a new session for the given user and stores it in the datastore.
 func NewSession(ctx context.Context, client *datastore.Client, userKey *datastore.Key) (*Session, error) {
+	return NewSessionWithDuration(ctx, client, userKey, defaultSessionDur)
+}
+
+func NewSessionWithDuration(ctx context.Context, client *datastore.Client, userKey *datastore.Key, dur time.Duration) (*Session, error) {
 	id, err := rand.Int(rand.Reader, maxint64)
 	if err != nil {
 		return nil, errors.Wrap(err, "choosing random session ID")
@@ -57,7 +60,7 @@ func NewSession(ctx context.Context, client *datastore.Client, userKey *datastor
 		UserKey: userKey,
 		CSRFKey: make([]byte, 32),
 		Active:  true,
-		Exp:     time.Now().Add(sessionDur),
+		Exp:     time.Now().Add(dur),
 	}
 
 	_, err = rand.Read(s.CSRFKey[:])
@@ -102,7 +105,7 @@ func GetSession(ctx context.Context, client *datastore.Client, req *http.Request
 // IsNoSession tells whether err is one of the unexceptional no-session errors
 // (http.ErrNoCookie, datastore.ErrNoSuchEntity, and ErrInactive).
 func IsNoSession(err error) bool {
-	return stderrs.Is(err, http.ErrNoCookie) || stderrs.Is(err, datastore.ErrNoSuchEntity) || stderrs.Is(err, ErrInactive)
+	return errors.Is(err, http.ErrNoCookie) || errors.Is(err, datastore.ErrNoSuchEntity) || errors.Is(err, ErrInactive)
 }
 
 // GetSessionByKey gets the session with the given key.
