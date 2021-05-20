@@ -50,6 +50,8 @@ func NewSession(ctx context.Context, client *datastore.Client, userKey *datastor
 	return NewSessionWithDuration(ctx, client, userKey, defaultSessionDur)
 }
 
+// NewSessionWithDuration creates a new session for the given user that expires after the given duration,
+// and stores it in the datastore.
 func NewSessionWithDuration(ctx context.Context, client *datastore.Client, userKey *datastore.Key, dur time.Duration) (*Session, error) {
 	id, err := rand.Int(rand.Reader, maxint64)
 	if err != nil {

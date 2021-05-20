@@ -49,7 +49,8 @@ func Idempotent(ctx context.Context, client *datastore.Client, key string) error
 	if status.Code(err) == codes.AlreadyExists {
 		return ErrIdempotency
 	}
-	if merr, ok := err.(datastore.MultiError); ok && status.Code(merr[0]) == codes.AlreadyExists {
+	var merr datastore.MultiError
+	if errors.As(err, &merr) && status.Code(merr[0]) == codes.AlreadyExists {
 		return ErrIdempotency
 	}
 	return errors.Wrapf(err, "storing idempotency key %s", key)

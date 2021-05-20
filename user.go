@@ -88,7 +88,8 @@ func NewUser(ctx context.Context, client *datastore.Client, email, pw string, uw
 	// you have to use Mutate instead of Put.
 	ins := datastore.NewInsert(u.Key(), uw)
 	_, err = client.Mutate(ctx, ins)
-	if me, ok := err.(datastore.MultiError); ok && len(me) == 1 {
+	var me datastore.MultiError
+	if errors.As(err, &me) && len(me) == 1 {
 		err = me[0]
 	}
 	return errors.Wrap(err, "storing user")
@@ -276,7 +277,7 @@ var ErrUpdateConflict = errors.New("update conflict")
 // After f runs (without error),
 // UpdateUser fetches a new copy of the same user record
 // to ensure that its UpdateCounter field hasn't changed.
-// If it has, the transaction is rolled back.
+// If it has, the transaction is rolled back and the error ErrUpdateConflict is returned.
 // Otherwise, UpdateCounter is incremented and the transaction committed.
 //
 // Note that this means f runs even if the user cannot ultimately be atomically updated.
