@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"math"
 	"math/big"
 	"net/http"
@@ -211,6 +212,36 @@ func (s *Session) CSRFCheck(inp string) error {
 	want := h.Sum(nil)
 	if !hmac.Equal(got[csrfNonceLen:], want) {
 		return ErrCSRF
+	}
+	return nil
+}
+
+// SessionHandler is HTTP middleware.
+// It calls GetSession on an HTTP request.
+// If one is found,
+// the request's context is decorated with the session object before calling the next handler in the chain.
+// That next handler can access the session by calling ContextSession.
+func SessionHandler(client *datastore.Client, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		sess, err := GetSession(ctx, client, req)
+		if err != nil && !IsNoSession(err) {
+			http.Error(w, fmt.Sprintf("looking up session: %s", err), http.StatusInternalServerError)
+			return
+		}
+		ctx = context.WithValue(ctx, sessKey{}, sess)
+		req = req.WithContext(ctx)
+		next.ServeHTTP(w, req)
+	})
+}
+
+type sessKey struct{}
+
+// ContextSession returns the session attached to the context by SessionHandler, if any.
+func ContextSession(ctx context.Context) *Session {
+	val := ctx.Value(sessKey{})
+	if val != nil {
+		return val.(*Session)
 	}
 	return nil
 }
