@@ -1,4 +1,4 @@
-module github.com/bobg/aesite
+module github.com/bobg/aesite/v2
 
 go 1.13
 
