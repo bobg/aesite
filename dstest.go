@@ -41,6 +41,12 @@ func DSTest(ctx context.Context, projectID string) error {
 		log.Print("datastore emulator exited")
 	}()
 
+	go func() {
+		<-ctx.Done()
+		// Try to make sure the datastore emulator exits.
+		cmd.Process.Signal(os.Interrupt)
+	}()
+
 	time.Sleep(2 * time.Second)
 
 	envLines, err := exec.Command("gcloud", "--project", projectID, "beta", "emulators", "datastore", "env-init").Output()
