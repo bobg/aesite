@@ -30,7 +30,25 @@ var envInitRegex = regexp.MustCompile(`export\s+([^=]+)=(.*)`)
 // then a KILL signal,
 // in an attempt to ensure it exits.
 // The return value is a channel that gets closed when the emulator subprocess exits.
-func DSTest(ctx context.Context, projectID string) (<-chan struct{}, error) {
+// DSTest starts the datastore emulator in a subprocess.
+// It uses the gcloud binary, which must be found in PATH.
+// (Further, the proper gcloud components must be installed;
+// see https://cloud.google.com/datastore/docs/tools/datastore-emulator.)
+// It gives the program two seconds to start,
+// then sets this process's environment variables
+// (again with gcloud)
+// as needed for the datastore client library to use the emulator.
+// When the given context is canceled,
+// the emulator subprocess gets an interrupt signal.
+func DSTest(ctx context.Context, projectID string) error {
+	_, err := DSTestWithDoneChan(ctx, projectID)
+	return err
+}
+
+// DSTestWithDoneChan is the same as DSTest (qv)
+// but it also returns a channel that closes when the emulator subprocess exits.
+// The caller should block on this channel before exiting the main process.
+func DSTestWithDoneChan(ctx context.Context, projectID string) (<-chan struct{}, error) {
 	log.Print("starting datastore emulator")
 	cmd := exec.CommandContext(ctx, "gcloud", "--project", projectID, "beta", "emulators", "datastore", "start")
 	err := cmd.Start()
