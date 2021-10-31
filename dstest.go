@@ -57,6 +57,13 @@ func DSTest(ctx context.Context, projectID string) (func() error, error) {
 	}
 
 	return func() error {
+		log.Print("waiting 30 seconds to terminate the datastore emulator")
+
+		// TODO: create GRPC interceptors,
+		// and return them from this function for the caller to use when calling datastore.NewClient.
+		// The interceptors will simply note the time of any call to the datastore emulator,
+		// so that the duration of this sleep can be reduced to _at most_ 30 seconds.
+		time.Sleep(30 * time.Second)
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // kill the whole process group
 		return cmd.Wait()
 	}, nil
