@@ -31,6 +31,12 @@ var envInitRegex = regexp.MustCompile(`export\s+([^=]+)=(.*)`)
 //
 // Returns a slice of option.ClientOptions that the caller should use in a call to datastore.NewClient,
 // and a function that can be used to kill the emulator subprocess and return its Wait result.
+//
+// (The ClientOptions add interceptors that reset a thirty-second timer on each call.
+// The kill function waits until that timer expires before actually killing the emulator.
+// This is necessary because the emulator may have buffered changes not yet written to disk.
+// There does not appear to be a way to flush them explicitly,
+// but waiting thirty seconds after the last change seems to do the trick.)
 func DSTest(ctx context.Context, projectID string) ([]option.ClientOption, func() error, error) {
 	log.Print("starting datastore emulator")
 
@@ -73,11 +79,11 @@ func DSTest(ctx context.Context, projectID string) ([]option.ClientOption, func(
 	}
 
 	unaryInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		u()
+		defer u()
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 	streamInterceptor := func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		u()
+		defer u()
 		s, err := streamer(ctx, desc, cc, method, opts...)
 		return &dstestClientStream{update: u, s: s}, err
 	}
@@ -86,13 +92,20 @@ func DSTest(ctx context.Context, projectID string) ([]option.ClientOption, func(
 		option.WithGRPCDialOption(grpc.WithStreamInterceptor(streamInterceptor)),
 	}
 
+	var killed bool
 	k := func() error {
+		if killed {
+			return nil
+		}
 		d := time.Until(t.Add(30 * time.Second))
 		if d > 0 {
 			log.Printf("waiting %s to terminate the datastore emulator", d)
 			time.Sleep(d)
 		}
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // kill the whole process group
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) // kill the whole process group
+		time.Sleep(time.Second)
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		killed = true
 		return cmd.Wait()
 	}
 
@@ -105,31 +118,31 @@ type dstestClientStream struct {
 }
 
 func (s *dstestClientStream) Header() (metadata.MD, error) {
-	s.update()
+	defer s.update()
 	return s.s.Header()
 }
 
 func (s *dstestClientStream) Trailer() metadata.MD {
-	s.update()
+	defer s.update()
 	return s.s.Trailer()
 }
 
 func (s *dstestClientStream) CloseSend() error {
-	s.update()
+	defer s.update()
 	return s.s.CloseSend()
 }
 
 func (s *dstestClientStream) Context() context.Context {
-	s.update()
+	defer s.update()
 	return s.s.Context()
 }
 
 func (s *dstestClientStream) SendMsg(m interface{}) error {
-	s.update()
+	defer s.update()
 	return s.s.SendMsg(m)
 }
 
 func (s *dstestClientStream) RecvMsg(m interface{}) error {
-	s.update()
+	defer s.update()
 	return s.s.RecvMsg(m)
 }
