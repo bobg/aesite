@@ -75,7 +75,8 @@ func NewSessionWithDuration(ctx context.Context, client *datastore.Client, userK
 	return s, err
 }
 
-const cookieName = "s"
+// CookieName is the name of the aesite session cookie.
+var CookieName = "s"
 
 // ErrInactive means a session is inactive or expired.
 var ErrInactive = errors.New("inactive session")
@@ -91,7 +92,7 @@ var ErrInactive = errors.New("inactive session")
 // the resulting error is ErrInactive.
 // You can use IsNoSession to test whether the error is any one of those.
 func GetSession(ctx context.Context, client *datastore.Client, req *http.Request) (*Session, error) {
-	cookie, err := req.Cookie(cookieName)
+	cookie, err := req.Cookie(CookieName)
 	if err == http.ErrNoCookie {
 		return nil, err
 	}
@@ -149,7 +150,7 @@ func (s *Session) SetCookie(w http.ResponseWriter) {
 		return
 	}
 	cookie := &http.Cookie{
-		Name:    cookieName,
+		Name:    CookieName,
 		Value:   s.Key().Encode(),
 		Expires: s.Exp,
 	}
