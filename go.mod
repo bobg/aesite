@@ -1,8 +1,6 @@
-module github.com/bobg/aesite/v4
+module github.com/bobg/aesite/v5
 
 go 1.23.0
-
-toolchain go1.24.2
 
 require (
 	cloud.google.com/go/cloudtasks v1.13.6
