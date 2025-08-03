@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/datastore"
-	"github.com/pkg/errors"
+	"github.com/bobg/errors"
 	"golang.org/x/crypto/scrypt"
 )
 

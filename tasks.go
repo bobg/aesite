@@ -5,11 +5,12 @@ import (
 	"time"
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
-	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/pkg/errors"
+	"cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
+	"github.com/bobg/errors"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	taskspb "google.golang.org/genproto/googleapis/cloud/tasks/v2"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TaskService is a minimal interface to a cloudtasks service.
@@ -48,17 +49,17 @@ func (t *GCloudTasks) Enqueue(ctx context.Context, queue, taskName, url string, 
 		secs  = when.Unix()
 		nanos = int32(when.UnixNano() % int64(time.Second))
 	)
-	_, err := (*cloudtasks.Client)(t).CreateTask(ctx, &taskspb.CreateTaskRequest{
+	_, err := (*cloudtasks.Client)(t).CreateTask(ctx, &cloudtaskspb.CreateTaskRequest{
 		Parent: queue,
-		Task: &taskspb.Task{
+		Task: &cloudtaskspb.Task{
 			Name: taskName,
-			MessageType: &taskspb.Task_AppEngineHttpRequest{
-				AppEngineHttpRequest: &taskspb.AppEngineHttpRequest{
-					HttpMethod:  taskspb.HttpMethod_GET,
+			MessageType: &cloudtaskspb.Task_AppEngineHttpRequest{
+				AppEngineHttpRequest: &cloudtaskspb.AppEngineHttpRequest{
+					HttpMethod:  cloudtaskspb.HttpMethod_GET,
 					RelativeUri: url,
 				},
 			},
-			ScheduleTime: &timestamp.Timestamp{
+			ScheduleTime: &timestamppb.Timestamp{
 				Seconds: secs,
 				Nanos:   nanos,
 			},
