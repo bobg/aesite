@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/datastore"
-	"github.com/pkg/errors"
+	"github.com/bobg/errors"
 )
 
 // Session is the type of a user login session.
